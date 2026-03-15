@@ -107,7 +107,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
                 htmlFor="code"
                 className="block text-sm font-medium text-zinc-700 dark:text-zinc-200"
               >
-                Magic code
+                Verification Code
               </label>
               <input
                 id="code"
