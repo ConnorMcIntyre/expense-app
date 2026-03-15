@@ -9,7 +9,7 @@ import { ExpenseForm } from "./ExpenseForm";
 type ExpenseEntity = InstaQLEntity<typeof schema, "expenses", { owner: {} }>;
 type BudgetEntity = InstaQLEntity<typeof schema, "budgets", { owner: {} }>;
 
-type ActiveTab = "expenses" | "totals" | "budget";
+type ActiveTab = "expenses" | "totals" | "budget" | "compare";
 
 const PIE_COLORS = [
   "#6366f1",
@@ -35,6 +35,15 @@ function formatMonthLabel(value: string | null | undefined, opts?: { emptyLabel?
   });
 }
 
+function formatYearLabel(value: string | null | undefined, opts?: { emptyLabel?: string }) {
+  if (!value) {
+    return opts?.emptyLabel ?? "all years";
+  }
+  const [year] = value.split("-");
+  if (!year) return value;
+  return year;
+}
+
 type BudgetEntry = {
   id: string;
   type: string;
@@ -49,6 +58,7 @@ export function ExpensesDashboard() {
   const [totalsMonth, setTotalsMonth] = useState(
     () => new Date().toISOString().slice(0, 7), // YYYY-MM
   );
+  const [totalsStore, setTotalsStore] = useState("");
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(
     null,
   );
@@ -92,9 +102,7 @@ export function ExpensesDashboard() {
     let runningTotal = 0;
 
     for (const exp of expenses) {
-      const monthKey = new Date(exp.createdAt)
-        .toISOString()
-        .slice(0, 7);
+      const monthKey = new Date(exp.createdAt).toISOString().slice(0, 7);
       if (totalsMonth && monthKey !== totalsMonth) continue;
 
       const price = Number(exp.price) || 0;
@@ -112,6 +120,23 @@ export function ExpensesDashboard() {
 
     return { total: runningTotal, byType: byTypeArr };
   }, [expenses, totalsMonth]);
+
+  const monthExpensesForTotals = useMemo(
+    () =>
+      expenses.filter((exp) => {
+        const monthKey = new Date(exp.createdAt).toISOString().slice(0, 7);
+        return totalsMonth ? monthKey === totalsMonth : true;
+      }),
+    [expenses, totalsMonth],
+  );
+
+  const filteredMonthExpenses = useMemo(() => {
+    const q = totalsStore.trim().toLowerCase();
+    if (!q) return monthExpensesForTotals;
+    return monthExpensesForTotals.filter((exp) =>
+      (exp.store || "").toLowerCase().includes(q),
+    );
+  }, [monthExpensesForTotals, totalsStore]);
 
   return (
     <div className="min-h-screen bg-background text-foreground px-4 py-8">
@@ -163,7 +188,7 @@ export function ExpensesDashboard() {
                 : "hover:bg-zinc-200/80 dark:hover:bg-zinc-800/80"
             }`}
           >
-            Totals
+            Total Expenses
           </button>
           <button
             type="button"
@@ -175,6 +200,17 @@ export function ExpensesDashboard() {
             }`}
           >
             Budget
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("compare")}
+            className={`flex-1 rounded-full px-3 py-1.5 transition ${
+              activeTab === "compare"
+                ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
+                : "hover:bg-zinc-200/80 dark:hover:bg-zinc-800/80"
+            }`}
+          >
+            Expenses vs Budget
           </button>
         </nav>
 
@@ -229,7 +265,7 @@ export function ExpensesDashboard() {
               <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h2 className="text-sm font-medium uppercase tracking-wide text-black dark:text-zinc-500">
-                    Totals
+                    Total Expenses
                   </h2>
                   <p className="text-xs text-black dark:text-zinc-400">
                     Showing expenses for{" "}
@@ -239,20 +275,38 @@ export function ExpensesDashboard() {
                     .
                   </p>
                 </div>
-                <div className="space-y-1">
-                  <label
-                    htmlFor="totalsMonth"
-                    className="block text-[11px] font-medium uppercase tracking-wide text-black dark:text-zinc-500"
-                  >
-                    Month filter
-                  </label>
-                  <input
-                    id="totalsMonth"
-                    type="month"
-                    value={totalsMonth}
-                    onChange={(e) => setTotalsMonth(e.target.value)}
-                    className="w-40 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
-                  />
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="totalsMonth"
+                      className="block text-[11px] font-medium uppercase tracking-wide text-black dark:text-zinc-500"
+                    >
+                      Month filter
+                    </label>
+                    <input
+                      id="totalsMonth"
+                      type="month"
+                      value={totalsMonth}
+                      onChange={(e) => setTotalsMonth(e.target.value)}
+                      className="w-40 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="totalsStore"
+                      className="block text-[11px] font-medium uppercase tracking-wide text-black dark:text-zinc-500"
+                    >
+                      Store filter (month)
+                    </label>
+                    <input
+                      id="totalsStore"
+                      type="text"
+                      value={totalsStore}
+                      onChange={(e) => setTotalsStore(e.target.value)}
+                      placeholder="e.g. Trader Joe's"
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+                    />
+                  </div>
                 </div>
               </div>
               {expenses.length === 0 ? (
@@ -307,6 +361,40 @@ export function ExpensesDashboard() {
                       })}
                     </ul>
                   </div>
+                  <div className="mt-4 space-y-2">
+                    <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      Expenses for this month
+                    </h3>
+                    {filteredMonthExpenses.length === 0 ? (
+                      <p className="text-xs text-zinc-500">
+                        No expenses match this store filter for the selected month.
+                      </p>
+                    ) : (
+                      <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-zinc-100 bg-zinc-50 p-2 text-xs text-black dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-200">
+                        {filteredMonthExpenses.map((exp) => (
+                          <li
+                            key={exp.id}
+                            className="flex items-baseline justify-between gap-3 rounded-md px-2 py-1 hover:bg-zinc-100/80 dark:hover:bg-zinc-900/60"
+                          >
+                            <div className="flex flex-col">
+                              <span className="text-[11px] text-zinc-500">
+                                {new Date(exp.createdAt).toLocaleDateString()}
+                              </span>
+                              <span className="text-xs font-medium">
+                                {exp.store}
+                              </span>
+                              <span className="text-[11px] text-zinc-500">
+                                {exp.type} — {exp.description}
+                              </span>
+                            </div>
+                            <span className="text-xs font-semibold tabular-nums">
+                              ${Number(exp.price).toFixed(2)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -321,8 +409,10 @@ export function ExpensesDashboard() {
               )}
             </div>
           </section>
-        ) : (
+        ) : activeTab === "budget" ? (
           <BudgetSection budgets={budgets} />
+        ) : (
+          <CompareSection expenses={expenses} budgets={budgets} />
         )}
       </div>
     </div>
@@ -487,7 +577,7 @@ function PieChart({
   let cumulative = 0;
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-3">
       <svg
         viewBox="0 0 200 200"
         className="h-48 w-48 -rotate-90 text-zinc-200 dark:text-zinc-800"
@@ -523,9 +613,28 @@ function PieChart({
           );
         })}
       </svg>
-      <p className="text-xs text-zinc-500">
-        Share of total spend by expense type.
-      </p>
+      <div className="flex flex-wrap justify-center gap-2 text-[11px]">
+        {byType.map((row, index) => {
+          const percentage = (row.amount / total) * 100;
+          return (
+            <div
+              key={row.type}
+              className="flex items-center gap-1.5 rounded-full bg-zinc-100 px-2 py-0.5 text-black dark:bg-zinc-800 dark:text-zinc-100"
+            >
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{
+                  backgroundColor: PIE_COLORS[index % PIE_COLORS.length],
+                }}
+              />
+              <span>{row.type}</span>
+              <span className="tabular-nums text-zinc-500 dark:text-zinc-300">
+                {percentage.toFixed(1)}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -784,5 +893,226 @@ function BudgetSection({ budgets }: { budgets: BudgetEntity[] }) {
   );
 }
 
+function CompareSection({
+  expenses,
+  budgets,
+}: {
+  expenses: ExpenseEntity[];
+  budgets: BudgetEntity[];
+}) {
+  const [month, setMonth] = useState(
+    () => new Date().toISOString().slice(0, 7), // YYYY-MM
+  );
 
+  const monthExpenses = useMemo(
+    () =>
+      expenses.filter((exp) => {
+        const key = new Date(exp.createdAt).toISOString().slice(0, 7);
+        return key === month;
+      }),
+    [expenses, month],
+  );
 
+  const monthBudgets = useMemo(
+    () => budgets.filter((b) => b.month === month),
+    [budgets, month],
+  );
+
+  type Row = {
+    type: string;
+    spent: number;
+    budget: number;
+  };
+
+  const rows: Row[] = useMemo(() => {
+    const spentByType = new Map<string, number>();
+    for (const exp of monthExpenses) {
+      const key = (exp.type || "Uncategorized").trim() || "Uncategorized";
+      const prev = spentByType.get(key) ?? 0;
+      spentByType.set(key, prev + (Number(exp.price) || 0));
+    }
+
+    const budgetByType = new Map<string, number>();
+    for (const b of monthBudgets) {
+      const key = (b.type || "Uncategorized").trim() || "Uncategorized";
+      const prev = budgetByType.get(key) ?? 0;
+      budgetByType.set(key, prev + (Number(b.amount) || 0));
+    }
+
+    const allTypes = new Set<string>([
+      ...spentByType.keys(),
+      ...budgetByType.keys(),
+    ]);
+
+    return Array.from(allTypes).map((type) => ({
+      type,
+      spent: spentByType.get(type) ?? 0,
+      budget: budgetByType.get(type) ?? 0,
+    }));
+  }, [monthExpenses, monthBudgets]);
+
+  const totalSpent = rows.reduce((sum, r) => sum + r.spent, 0);
+  const totalBudget = rows.reduce((sum, r) => sum + r.budget, 0);
+
+  const spentByType = rows.map((r) => ({ type: r.type, amount: r.spent }));
+  const budgetByType = rows.map((r) => ({ type: r.type, amount: r.budget }));
+
+  return (
+    <section className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="rounded-2xl border border-zinc-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-sm font-medium uppercase tracking-wide text-black dark:text-zinc-500">
+              Expenses vs Budget
+            </h2>
+            <p className="text-xs text-black dark:text-zinc-400">
+              Comparing for{" "}
+              <span className="font-medium">
+                {formatMonthLabel(month, { emptyLabel: "Select month" })}
+              </span>
+              .
+            </p>
+          </div>
+          <div className="space-y-1">
+            <label
+              htmlFor="compareMonth"
+              className="block text-[11px] font-medium uppercase tracking-wide text-black dark:text-zinc-500"
+            >
+              Month
+            </label>
+            <input
+              id="compareMonth"
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="w-40 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+            />
+          </div>
+        </div>
+
+        {rows.length === 0 ? (
+          <p className="text-sm text-zinc-500">
+            No expenses or budgets for this month yet.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-baseline justify-between gap-3 text-xs">
+              <div className="space-y-0.5">
+                <div className="text-zinc-500">Total spent</div>
+                <div className="text-lg font-semibold tabular-nums text-black dark:text-zinc-50">
+                  ${totalSpent.toFixed(2)}
+                </div>
+              </div>
+              <div className="space-y-0.5 text-right">
+                <div className="text-zinc-500">Total budget</div>
+                <div className="text-lg font-semibold tabular-nums text-black dark:text-zinc-50">
+                  ${totalBudget.toFixed(2)}
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-zinc-100 bg-zinc-50 text-xs text-black dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-200">
+              <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b border-zinc-100 bg-zinc-100/60 px-4 py-2 font-medium uppercase tracking-wide text-[10px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60">
+                <span>Type</span>
+                <span className="text-right">Spent</span>
+                <span className="text-right">Budget</span>
+                <span className="text-right">Diff</span>
+              </div>
+              <ul className="divide-y divide-zinc-100 dark:divide-zinc-900/70">
+                {rows.map((row) => {
+                  const diff = row.spent - row.budget;
+                  const over = diff > 0;
+                  return (
+                    <li
+                      key={row.type}
+                      className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 px-4 py-2.5"
+                    >
+                      <span className="truncate font-medium">{row.type}</span>
+                      <span className="text-right tabular-nums">
+                        ${row.spent.toFixed(2)}
+                      </span>
+                      <span className="text-right tabular-nums">
+                        ${row.budget.toFixed(2)}
+                      </span>
+                      <span
+                        className={`text-right tabular-nums ${
+                          over
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-emerald-700 dark:text-emerald-400"
+                        }`}
+                      >
+                        {over ? "+" : ""}
+                        {diff.toFixed(2)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-zinc-200 bg-white/80 p-6 text-xs text-zinc-600 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80 dark:text-zinc-300">
+        <div className="mb-6 grid gap-6 md:grid-cols-2">
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide">
+                Expenses by type
+              </p>
+              {totalSpent === 0 ? (
+                <p className="text-xs text-zinc-500">
+                  No expenses recorded for this month yet.
+                </p>
+              ) : (
+                <PieChart byType={spentByType} />
+              )}
+            </div>
+            {totalSpent > 0 && (
+              <p className="text-[11px] font-medium text-zinc-700 dark:text-zinc-200">
+                Total spent:{" "}
+                <span className="tabular-nums">
+                  ${totalSpent.toFixed(2)}
+                </span>
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide">
+                Budget by type
+              </p>
+              {totalBudget === 0 ? (
+                <p className="text-xs text-zinc-500">
+                  No budgets set for this month yet.
+                </p>
+              ) : (
+                <PieChart byType={budgetByType} />
+              )}
+            </div>
+            {totalBudget > 0 && (
+              <p className="text-[11px] font-medium text-zinc-700 dark:text-zinc-200">
+                Total budgeted:{" "}
+                <span className="tabular-nums">
+                  ${totalBudget.toFixed(2)}
+                </span>
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-2 space-y-1">
+          <p className="text-[11px] font-medium uppercase tracking-wide">
+            How this works
+          </p>
+          <p className="text-xs">
+            For the selected month, we sum all recorded expenses by type and
+            compare them to the budgets you&apos;ve set. The table shows the
+            numeric difference, while the pies show relative distribution.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
