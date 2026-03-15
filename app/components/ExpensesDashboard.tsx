@@ -355,7 +355,9 @@ function ExpensesList({
               {new Date(expense.createdAt).toLocaleString()}
             </span>
             <div className="flex flex-col">
-              <span className="truncate font-medium">{expense.type}</span>
+              <span className="truncate font-medium text-black dark:text-zinc-50">
+                {expense.type}
+              </span>
               <span className="truncate text-xs text-zinc-500">
                 {expense.description}
               </span>
