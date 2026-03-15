@@ -1,0 +1,786 @@
+'use client';
+
+import { useEffect, useMemo, useState } from "react";
+import db from "@/lib/db";
+import { id, type InstaQLEntity } from "@instantdb/react";
+import schema from "../../instant.schema";
+import { ExpenseForm } from "./ExpenseForm";
+
+type ExpenseEntity = InstaQLEntity<typeof schema, "expenses", { owner: {} }>;
+type BudgetEntity = InstaQLEntity<typeof schema, "budgets", { owner: {} }>;
+
+type ActiveTab = "expenses" | "totals" | "budget";
+
+const PIE_COLORS = [
+  "#6366f1",
+  "#22c55e",
+  "#f97316",
+  "#ec4899",
+  "#06b6d4",
+  "#eab308",
+];
+
+function formatMonthLabel(value: string | null | undefined, opts?: { emptyLabel?: string }) {
+  if (!value) {
+    return opts?.emptyLabel ?? "all months";
+  }
+  const [year, month] = value.split("-");
+  if (!year || !month) return value;
+  const monthIndex = Number(month) - 1;
+  if (Number.isNaN(monthIndex) || monthIndex < 0 || monthIndex > 11) return value;
+  const date = new Date(Number(year), monthIndex, 1);
+  return date.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+type BudgetEntry = {
+  id: string;
+  type: string;
+  month: string; // YYYY-MM
+  amount: number;
+};
+
+export function ExpensesDashboard() {
+  const user = db.useUser();
+  const userId = user?.id;
+  const [activeTab, setActiveTab] = useState<ActiveTab>("expenses");
+  const [totalsMonth, setTotalsMonth] = useState(
+    () => new Date().toISOString().slice(0, 7), // YYYY-MM
+  );
+  const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(
+    null,
+  );
+
+  const { isLoading, error, data } = db.useQuery(
+    userId
+      ? {
+          expenses: {
+            $: {
+              where: {
+                owner: userId,
+              },
+              order: {
+                createdAt: "desc",
+              },
+            },
+          },
+          budgets: {
+            $: {
+              where: {
+                owner: userId,
+              },
+              order: {
+                createdAt: "desc",
+              },
+            },
+          },
+        }
+      : null,
+  );
+
+  const expenses = (data?.expenses as ExpenseEntity[]) ?? [];
+  const budgets = (data?.budgets as BudgetEntity[]) ?? [];
+  const selectedExpense =
+    selectedExpenseId != null
+      ? expenses.find((e) => e.id === selectedExpenseId) ?? null
+      : null;
+
+  const { total, byType } = useMemo(() => {
+    const summary = new Map<string, number>();
+    let runningTotal = 0;
+
+    for (const exp of expenses) {
+      const monthKey = new Date(exp.createdAt)
+        .toISOString()
+        .slice(0, 7);
+      if (totalsMonth && monthKey !== totalsMonth) continue;
+
+      const price = Number(exp.price) || 0;
+      runningTotal += price;
+      const key = (exp.type || "Uncategorized").trim() || "Uncategorized";
+      summary.set(key, (summary.get(key) ?? 0) + price);
+    }
+
+    const byTypeArr = Array.from(summary.entries())
+      .map(([type, amount]) => ({
+        type,
+        amount,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    return { total: runningTotal, byType: byTypeArr };
+  }, [expenses, totalsMonth]);
+
+  return (
+    <div className="min-h-screen bg-background text-foreground px-4 py-8">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight">
+              ExpenseBetter
+            </h1>
+            <p className="text-sm text-zinc-500">
+              Track your expenses in seconds.
+            </p>
+          </div>
+          {user && (
+            <div className="flex flex-col items-start gap-2 text-xs text-zinc-500 sm:flex-row sm:items-center">
+              <span className="rounded-full bg-zinc-100 px-3 py-1 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+                Signed in as{" "}
+                <span className="font-medium">{user.email ?? "Unknown"}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => db.auth.signOut()}
+                className="rounded-full border border-white px-3 py-1 text-xs font-medium text-white transition hover:bg-white/10"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
+        </header>
+
+        <nav className="flex gap-2 rounded-full border border-zinc-200 bg-zinc-100/60 p-1 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60">
+          <button
+            type="button"
+            onClick={() => setActiveTab("expenses")}
+            className={`flex-1 rounded-full px-3 py-1.5 transition ${
+              activeTab === "expenses"
+                ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
+                : "hover:bg-zinc-200/80 dark:hover:bg-zinc-800/80"
+            }`}
+          >
+            Record Expense
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("totals")}
+            className={`flex-1 rounded-full px-3 py-1.5 transition ${
+              activeTab === "totals"
+                ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
+                : "hover:bg-zinc-200/80 dark:hover:bg-zinc-800/80"
+            }`}
+          >
+            Totals
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("budget")}
+            className={`flex-1 rounded-full px-3 py-1.5 transition ${
+              activeTab === "budget"
+                ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
+                : "hover:bg-zinc-200/80 dark:hover:bg-zinc-800/80"
+            }`}
+          >
+            Budget
+          </button>
+        </nav>
+
+        {activeTab === "expenses" ? (
+          <section className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+            <div className="rounded-2xl border border-zinc-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
+              <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">
+                Add expense
+              </h2>
+              <ExpenseForm />
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
+              <div className="mb-3 flex items-baseline justify-between gap-2">
+                <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+                  Recent expenses
+                </h2>
+                <span className="text-xs text-zinc-400">
+                  {expenses.length} total
+                </span>
+              </div>
+              {isLoading ? (
+                <p className="text-sm text-zinc-500">Loading expenses...</p>
+              ) : error ? (
+                <p className="text-sm text-red-500">
+                  Error loading expenses: {error.message}
+                </p>
+              ) : expenses.length === 0 ? (
+                <p className="text-sm text-zinc-500">
+                  No expenses yet. Add your first one on the left.
+                </p>
+              ) : (
+                <>
+                  <ExpensesList
+                    expenses={expenses}
+                    onSelect={(expense) =>
+                      setSelectedExpenseId(
+                        expense.id === selectedExpenseId ? null : expense.id,
+                      )
+                    }
+                  />
+                  {selectedExpense && (
+                    <ExpenseDetails expense={selectedExpense} />
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+        ) : activeTab === "totals" ? (
+          <section className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <div className="rounded-2xl border border-zinc-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-sm font-medium uppercase tracking-wide text-black dark:text-zinc-500">
+                    Totals
+                  </h2>
+                  <p className="text-xs text-black dark:text-zinc-400">
+                    Showing expenses for{" "}
+                    <span className="font-medium">
+                      {formatMonthLabel(totalsMonth)}
+                    </span>
+                    .
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="totalsMonth"
+                    className="block text-[11px] font-medium uppercase tracking-wide text-black dark:text-zinc-500"
+                  >
+                    Month filter
+                  </label>
+                  <input
+                    id="totalsMonth"
+                    type="month"
+                    value={totalsMonth}
+                    onChange={(e) => setTotalsMonth(e.target.value)}
+                    className="w-40 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+                  />
+                </div>
+              </div>
+              {expenses.length === 0 ? (
+                <p className="text-sm text-zinc-500">
+                  No expenses yet. Add an expense to see totals.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm text-black dark:text-zinc-500">
+                      Total spent
+                    </span>
+                    <span className="text-2xl font-semibold tabular-nums text-black dark:text-zinc-50">
+                      ${total.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      By type
+                    </h3>
+                    <ul className="space-y-1.5 text-sm">
+                      {byType.map((row, index) => {
+                        const percentage =
+                          total > 0 ? (row.amount / total) * 100 : 0;
+                        return (
+                          <li
+                            key={row.type}
+                            className="flex items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="inline-block h-2 w-2 rounded-full"
+                                style={{
+                                  backgroundColor:
+                                    PIE_COLORS[index % PIE_COLORS.length],
+                                }}
+                              />
+                              <span className="text-zinc-700 dark:text-zinc-200">
+                                {row.type}
+                              </span>
+                            </div>
+                            <div className="flex items-baseline gap-3 text-xs text-zinc-500">
+                              <span className="tabular-nums">
+                                ${row.amount.toFixed(2)}
+                              </span>
+                              <span className="tabular-nums">
+                                {percentage.toFixed(1)}%
+                              </span>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-center rounded-2xl border border-zinc-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
+              {expenses.length === 0 || total === 0 ? (
+                <p className="text-sm text-zinc-500">
+                  Add expenses to see a breakdown by type.
+                </p>
+              ) : (
+                <PieChart byType={byType} />
+              )}
+            </div>
+          </section>
+        ) : (
+          <BudgetSection budgets={budgets} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExpensesList({
+  expenses,
+  onSelect,
+}: {
+  expenses: ExpenseEntity[];
+  onSelect?: (expense: ExpenseEntity) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950/40">
+      <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.25fr)] gap-3 border-b border-zinc-100 bg-zinc-100/60 px-4 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/60">
+        <span>Date</span>
+        <span>Expense</span>
+        <span>Store</span>
+        <span className="text-right">Price</span>
+      </div>
+      <ul className="divide-y divide-zinc-100 text-sm dark:divide-zinc-900/70">
+        {expenses.map((expense) => (
+          <li
+            key={expense.id}
+            className="grid cursor-pointer grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.25fr)] gap-3 px-4 py-2.5 hover:bg-zinc-100/70 dark:hover:bg-zinc-900/60"
+            onClick={() => onSelect?.(expense)}
+          >
+            <span className="truncate text-xs text-zinc-500">
+              {new Date(expense.createdAt).toLocaleString()}
+            </span>
+            <div className="flex flex-col">
+              <span className="truncate font-medium">{expense.type}</span>
+              <span className="truncate text-xs text-zinc-500">
+                {expense.description}
+              </span>
+            </div>
+            <span className="truncate text-sm text-zinc-600 dark:text-zinc-300">
+              {expense.store}
+            </span>
+            <span className="text-right text-sm font-semibold tabular-nums text-black dark:text-zinc-200">
+              ${expense.price.toFixed(2)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleReceiptChange(
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setIsUploading(true);
+    try {
+      const storage: any = (db as any).storage;
+      const res = await storage.uploadFile(file);
+      const url =
+        (res && (res.url || res.signedUrl || res.publicUrl)) || "";
+
+      await db.transact(
+        db.tx.expenses[expense.id].update({
+          receiptUrl: url,
+        }),
+      );
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to upload receipt.");
+    } finally {
+      setIsUploading(false);
+      // allow re-uploading same file if desired
+      e.target.value = "";
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <div className="flex flex-col">
+          <span className="text-sm font-semibold">{expense.type}</span>
+          <span className="text-[11px] text-zinc-500">
+            {new Date(expense.createdAt).toLocaleString()}
+          </span>
+        </div>
+        <span className="text-sm font-semibold tabular-nums">
+          ${Number(expense.price).toFixed(2)}
+        </span>
+      </div>
+      <div className="mb-3 space-y-1.5">
+        <div className="text-[11px] uppercase tracking-wide text-zinc-500">
+          Store
+        </div>
+        <div className="text-xs">{expense.store}</div>
+      </div>
+      <div className="mb-3 space-y-1.5">
+        <div className="text-[11px] uppercase tracking-wide text-zinc-500">
+          Notes
+        </div>
+        <div className="whitespace-pre-wrap text-xs">
+          {expense.description || "No notes added."}
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="text-[11px] uppercase tracking-wide text-zinc-500">
+          Receipt
+        </div>
+        {expense.receiptUrl ? (
+          <a
+            href={expense.receiptUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-700 underline underline-offset-2 hover:text-zinc-900 dark:text-zinc-200 dark:hover:text-zinc-50"
+          >
+            View current receipt
+          </a>
+        ) : (
+          <p className="text-[11px] text-zinc-500">
+            No receipt uploaded yet.
+          </p>
+        )}
+        {error && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+            {error}
+          </div>
+        )}
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-zinc-300 px-3 py-2 text-[11px] text-zinc-600 hover:border-zinc-400 hover:bg-zinc-100/70 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-900/60">
+          <span>{isUploading ? "Uploading..." : "Upload receipt"}</span>
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            onChange={handleReceiptChange}
+            disabled={isUploading}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function PieChart({
+  byType,
+}: {
+  byType: { type: string; amount: number }[];
+}) {
+  const total = byType.reduce((sum, row) => sum + row.amount, 0);
+  if (total <= 0) {
+    return null;
+  }
+
+  const radius = 70;
+  const circumference = 2 * Math.PI * radius;
+
+  let cumulative = 0;
+
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <svg
+        viewBox="0 0 200 200"
+        className="h-48 w-48 -rotate-90 text-zinc-200 dark:text-zinc-800"
+      >
+        <circle
+          cx="100"
+          cy="100"
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="24"
+        />
+        {byType.map((row, index) => {
+          const fraction = row.amount / total;
+          const dash = fraction * circumference;
+          const gap = circumference - dash;
+          const strokeDasharray = `${dash} ${gap}`;
+          const strokeDashoffset = -cumulative * circumference;
+          cumulative += fraction;
+
+          return (
+            <circle
+              key={row.type}
+              cx="100"
+              cy="100"
+              r={radius}
+              fill="none"
+              stroke={PIE_COLORS[index % PIE_COLORS.length]}
+              strokeWidth="24"
+              strokeDasharray={strokeDasharray}
+              strokeDashoffset={strokeDashoffset}
+            />
+          );
+        })}
+      </svg>
+      <p className="text-xs text-zinc-500">
+        Share of total spend by expense type.
+      </p>
+    </div>
+  );
+}
+
+function BudgetSection({ budgets }: { budgets: BudgetEntity[] }) {
+  const user = db.useUser();
+  const userId = user?.id;
+  const [entries, setEntries] = useState<BudgetEntry[]>([]);
+  const [type, setType] = useState("");
+  const [month, setMonth] = useState(
+    () => new Date().toISOString().slice(0, 7), // YYYY-MM
+  );
+  const [amount, setAmount] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  // When month or user changes, defer to server data for that month
+  useEffect(() => {
+    setEntries([]);
+  }, [month, userId]);
+
+  const monthBudgets = budgets
+    .filter((b) => b.month === month)
+    .map((b) => ({
+      id: b.id,
+      type: b.type,
+      month: b.month,
+      amount: Number(b.amount) || 0,
+    }));
+
+  const effectiveEntries =
+    entries.length > 0 ? entries : monthBudgets;
+
+  const totalBudget = effectiveEntries.reduce((sum, e) => sum + e.amount, 0);
+
+  const byType = useMemo(
+    () =>
+      Object.values(
+        effectiveEntries.reduce<Record<string, { type: string; amount: number }>>(
+          (acc, entry) => {
+            const key = entry.type.trim() || "Uncategorized";
+            if (!acc[key]) {
+              acc[key] = { type: key, amount: 0 };
+            }
+            acc[key].amount += entry.amount;
+            return acc;
+          },
+          {},
+        ),
+      ),
+    [effectiveEntries],
+  );
+
+  async function handleAddBudget(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    const numericAmount = Number(amount);
+    if (
+      !type ||
+      !month ||
+      !amount ||
+      Number.isNaN(numericAmount) ||
+      numericAmount <= 0
+    ) {
+      setError("Please enter a type, month, and positive budget amount.");
+      return;
+    }
+
+    try {
+      if (!userId) {
+        setError("You must be signed in to save a budget.");
+        return;
+      }
+
+      await db.transact(
+        db.tx.budgets[id()]
+          .update({
+            type: type.trim(),
+            month,
+            amount: numericAmount,
+            createdAt: Date.now(),
+          })
+          .link({ owner: userId }),
+      );
+
+      setAmount("");
+      setEntries([]); // let fresh data come from Instant
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to save budget.");
+    }
+  }
+
+  return (
+    <section className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="rounded-2xl border border-zinc-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
+        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
+          Budget planner
+        </h2>
+        <p className="mb-4 text-xs text-zinc-500">
+          Set a monthly budget per expense type. Budgets are stored locally in
+          this browser.
+        </p>
+        <form onSubmit={handleAddBudget} className="space-y-3">
+          {error && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+              {error}
+            </div>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label
+                htmlFor="budgetType"
+                className="block text-xs font-medium text-zinc-600 dark:text-zinc-300"
+              >
+                Category type
+              </label>
+              <input
+                id="budgetType"
+                type="text"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+                placeholder="Groceries, Rent, etc."
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none ring-0 transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label
+                htmlFor="budgetMonth"
+                className="block text-xs font-medium text-black dark:text-zinc-300"
+              >
+                Month
+              </label>
+              <input
+                id="budgetMonth"
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label
+              htmlFor="budgetAmount"
+              className="block text-xs font-medium text-black dark:text-zinc-300"
+            >
+              Amount
+            </label>
+            <div className="flex items-center rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus-within:border-zinc-400 focus-within:ring-2 focus-within:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:focus-within:border-zinc-500 dark:focus-within:ring-zinc-800">
+              <span className="mr-1 text-xs text-zinc-500">$</span>
+              <input
+                id="budgetAmount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full border-none bg-transparent text-sm text-black outline-none ring-0"
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            className="inline-flex w-full items-center justify-center rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-50 transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+          >
+            Add budget
+          </button>
+        </form>
+
+        <div className="mt-6 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="block text-sm text-zinc-500">
+                Total monthly budget (
+                {formatMonthLabel(month, { emptyLabel: "Select month" })})
+              </span>
+              <span className="text-xl font-semibold tabular-nums text-black dark:text-zinc-50">
+                ${totalBudget.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {byType.map((row, index) => (
+                <div
+                  key={row.type}
+                  className="flex items-center gap-1.5 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-black dark:bg-zinc-900 dark:text-zinc-300"
+                >
+                  <span
+                    className="inline-block h-2 w-2 rounded-full"
+                    style={{
+                      backgroundColor: PIE_COLORS[index % PIE_COLORS.length],
+                    }}
+                  />
+                  <span>{row.type}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-zinc-100 bg-zinc-50 text-xs text-black dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-200">
+            {effectiveEntries.length === 0 ? (
+              <p className="px-3 py-2 text-zinc-500">
+                No budgets for this month yet. Add one above.
+              </p>
+            ) : (
+              <ul className="divide-y divide-zinc-100 dark:divide-zinc-900/70">
+                {effectiveEntries.map((entry) => (
+                  <li
+                    key={entry.id}
+                    className="flex items-center justify-between gap-3 px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{
+                          backgroundColor:
+                            PIE_COLORS[
+                              Math.max(
+                                0,
+                                byType.findIndex(
+                                  (row) => row.type === entry.type.trim(),
+                                ),
+                              ) % PIE_COLORS.length
+                            ],
+                        }}
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-zinc-700 dark:text-zinc-200">
+                          {entry.type}
+                        </span>
+                        <span className="text-[11px] text-zinc-500">
+                          {entry.month}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-xs font-semibold tabular-nums text-zinc-700 dark:text-zinc-200">
+                      ${entry.amount.toFixed(2)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center rounded-2xl border border-zinc-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
+        {byType.length === 0 || totalBudget === 0 ? (
+          <p className="text-sm text-zinc-500">
+            Add budgets to see a breakdown by category.
+          </p>
+        ) : (
+          <PieChart byType={byType} />
+        )}
+      </div>
+    </section>
+  );
+}
+
+
+
