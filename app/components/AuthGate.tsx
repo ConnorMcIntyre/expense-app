@@ -95,7 +95,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
               disabled={isSubmitting}
               className="inline-flex w-full items-center justify-center rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-50 transition hover:bg-zinc-800 disabled:opacity-60 disabled:hover:bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
             >
-              {isSubmitting ? "Sending code..." : "Send magic code"}
+              {isSubmitting ? "Sending code..." : "Send verification code"}
             </button>
           </form>
         )}
