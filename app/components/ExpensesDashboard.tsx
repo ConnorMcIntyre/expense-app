@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import db from "@/lib/db";
 import { id, type InstaQLEntity } from "@instantdb/react";
 import schema from "../../instant.schema";
@@ -62,6 +62,11 @@ function formatExpenseWhen(createdAt: number): string {
     : d.toLocaleString();
 }
 
+/** Matches how we bucket types in totals / yearly breakdowns. */
+function expenseTypeCategory(type: string | undefined | null): string {
+  return (type || "Uncategorized").trim() || "Uncategorized";
+}
+
 type BudgetEntry = {
   id: string;
   type: string;
@@ -79,9 +84,26 @@ export function ExpensesDashboard() {
     String(new Date().getFullYear()),
   );
   const [yearlyStore, setYearlyStore] = useState("");
+  const [yearlyCategoryTypeFilter, setYearlyCategoryTypeFilter] = useState<
+    string | null
+  >(null);
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(
     null,
   );
+
+  const toggleYearlyCategoryFilter = useCallback((typeKey: string) => {
+    setYearlyCategoryTypeFilter((prev) =>
+      prev === typeKey ? null : typeKey,
+    );
+  }, []);
+
+  useEffect(() => {
+    setYearlyCategoryTypeFilter(null);
+  }, [yearlyYear, yearlyStore]);
+
+  useEffect(() => {
+    if (activeTab !== "yearly") setYearlyCategoryTypeFilter(null);
+  }, [activeTab]);
 
   const { isLoading, error, data } = db.useQuery(
     userId
@@ -202,6 +224,13 @@ export function ExpensesDashboard() {
       .sort((a, b) => b.amount - a.amount);
     return { yearlyTotal: runningTotal, yearlyByType: byTypeArr };
   }, [filteredYearExpenses]);
+
+  const yearlyListExpenses = useMemo(() => {
+    if (!yearlyCategoryTypeFilter) return filteredYearExpenses;
+    return filteredYearExpenses.filter(
+      (exp) => expenseTypeCategory(exp.type) === yearlyCategoryTypeFilter,
+    );
+  }, [filteredYearExpenses, yearlyCategoryTypeFilter]);
 
   return (
     <div className="min-h-screen bg-background text-foreground px-4 py-8">
@@ -568,54 +597,93 @@ export function ExpensesDashboard() {
                     <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                       By category
                     </h3>
+                    <p className="text-[11px] text-zinc-500">
+                      Click a category to show only those expenses below. Click
+                      again to show all.
+                    </p>
                     <ul className="space-y-1.5 text-sm">
                       {yearlyByType.map((row, index) => {
                         const percentage =
                           yearlyTotal > 0
                             ? (row.amount / yearlyTotal) * 100
                             : 0;
+                        const selected =
+                          yearlyCategoryTypeFilter === row.type;
                         return (
-                          <li
-                            key={row.type}
-                            className="flex items-center justify-between gap-3"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="inline-block h-2 w-2 rounded-full"
-                                style={{
-                                  backgroundColor:
-                                    PIE_COLORS[index % PIE_COLORS.length],
-                                }}
-                              />
-                              <span className="text-zinc-700 dark:text-zinc-200">
-                                {row.type}
-                              </span>
-                            </div>
-                            <div className="flex items-baseline gap-3 text-xs text-zinc-500">
-                              <span className="tabular-nums">
-                                ${row.amount.toFixed(2)}
-                              </span>
-                              <span className="tabular-nums">
-                                {percentage.toFixed(1)}%
-                              </span>
-                            </div>
+                          <li key={row.type} className="flex items-center">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleYearlyCategoryFilter(row.type)
+                              }
+                              className={`flex w-full items-center justify-between gap-3 rounded-lg border px-2 py-1.5 text-left transition ${
+                                selected
+                                  ? "border-zinc-400 bg-zinc-100 dark:border-zinc-500 dark:bg-zinc-800/80"
+                                  : "border-transparent hover:bg-zinc-100/80 dark:hover:bg-zinc-800/50"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="inline-block h-2 w-2 shrink-0 rounded-full"
+                                  style={{
+                                    backgroundColor:
+                                      PIE_COLORS[index % PIE_COLORS.length],
+                                  }}
+                                />
+                                <span className="text-zinc-700 dark:text-zinc-200">
+                                  {row.type}
+                                </span>
+                              </div>
+                              <div className="flex items-baseline gap-3 text-xs text-zinc-500">
+                                <span className="tabular-nums">
+                                  ${row.amount.toFixed(2)}
+                                </span>
+                                <span className="tabular-nums">
+                                  {percentage.toFixed(1)}%
+                                </span>
+                              </div>
+                            </button>
                           </li>
                         );
                       })}
                     </ul>
                   </div>
                   <div className="mt-4 space-y-2">
-                    <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                      Expenses for this year
-                    </h3>
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                        Expenses for this year
+                      </h3>
+                      {yearlyCategoryTypeFilter ? (
+                        <button
+                          type="button"
+                          onClick={() => setYearlyCategoryTypeFilter(null)}
+                          className="text-[11px] font-medium text-zinc-600 underline underline-offset-2 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+                        >
+                          Clear category filter
+                        </button>
+                      ) : null}
+                    </div>
+                    {yearlyCategoryTypeFilter ? (
+                      <p className="text-[11px] text-zinc-500">
+                        Showing{" "}
+                        <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                          {yearlyCategoryTypeFilter}
+                        </span>{" "}
+                        only.
+                      </p>
+                    ) : null}
                     {filteredYearExpenses.length === 0 ? (
                       <p className="text-xs text-zinc-500">
                         No expenses match this store filter for the selected
                         year.
                       </p>
+                    ) : yearlyListExpenses.length === 0 ? (
+                      <p className="text-xs text-zinc-500">
+                        No expenses in this category for the current filters.
+                      </p>
                     ) : (
                       <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-zinc-100 bg-zinc-50 p-2 text-xs text-black dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-200">
-                        {filteredYearExpenses.map((exp) => (
+                        {yearlyListExpenses.map((exp) => (
                           <li
                             key={exp.id}
                             className="flex items-baseline justify-between gap-3 rounded-md px-2 py-1 hover:bg-zinc-100/80 dark:hover:bg-zinc-900/60"
@@ -655,7 +723,12 @@ export function ExpensesDashboard() {
                       : "No expenses match the current filters for the chart."}
                 </p>
               ) : (
-                <PieChart byType={yearlyByType} />
+                <PieChart
+                  byType={yearlyByType}
+                  interactiveLegend
+                  selectedLegendType={yearlyCategoryTypeFilter}
+                  onLegendTypeClick={toggleYearlyCategoryFilter}
+                />
               )}
             </div>
           </section>
@@ -1048,8 +1121,14 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
 
 function PieChart({
   byType,
+  interactiveLegend,
+  selectedLegendType,
+  onLegendTypeClick,
 }: {
   byType: { type: string; amount: number }[];
+  interactiveLegend?: boolean;
+  selectedLegendType?: string | null;
+  onLegendTypeClick?: (type: string) => void;
 }) {
   const total = byType.reduce((sum, row) => sum + row.amount, 0);
   if (total <= 0) {
@@ -1101,13 +1180,22 @@ function PieChart({
       <div className="flex flex-wrap justify-center gap-2 text-[11px]">
         {byType.map((row, index) => {
           const percentage = (row.amount / total) * 100;
-          return (
-            <div
-              key={row.type}
-              className="flex items-center gap-1.5 rounded-full bg-zinc-100 px-2 py-0.5 text-black dark:bg-zinc-800 dark:text-zinc-100"
-            >
+          const selected = selectedLegendType === row.type;
+          const baseClass =
+            "flex items-center gap-1.5 rounded-full px-2 py-0.5 text-black dark:text-zinc-100";
+          const staticClass = interactiveLegend
+            ? ""
+            : "bg-zinc-100 dark:bg-zinc-800";
+          const interactiveClass = interactiveLegend
+            ? selected
+              ? "border border-zinc-400 bg-zinc-100 ring-1 ring-zinc-300 dark:border-zinc-500 dark:bg-zinc-800 dark:ring-zinc-600"
+              : "border border-transparent bg-zinc-100 hover:bg-zinc-200/90 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            : "";
+
+          const inner = (
+            <>
               <span
-                className="inline-block h-2 w-2 rounded-full"
+                className="inline-block h-2 w-2 shrink-0 rounded-full"
                 style={{
                   backgroundColor: PIE_COLORS[index % PIE_COLORS.length],
                 }}
@@ -1116,6 +1204,25 @@ function PieChart({
               <span className="tabular-nums text-zinc-500 dark:text-zinc-300">
                 {percentage.toFixed(1)}%
               </span>
+            </>
+          );
+
+          if (interactiveLegend && onLegendTypeClick) {
+            return (
+              <button
+                key={row.type}
+                type="button"
+                onClick={() => onLegendTypeClick(row.type)}
+                className={`${baseClass} ${interactiveClass} cursor-pointer transition`}
+              >
+                {inner}
+              </button>
+            );
+          }
+
+          return (
+            <div key={row.type} className={`${baseClass} ${staticClass}`}>
+              {inner}
             </div>
           );
         })}
