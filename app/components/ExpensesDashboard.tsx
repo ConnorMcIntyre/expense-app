@@ -6,7 +6,8 @@ import { id, type InstaQLEntity } from "@instantdb/react";
 import schema from "../../instant.schema";
 import {
   localYearMonthNow,
-  parseLocalDateYmd,
+  parseLocalDateTimeYmdHm,
+  timestampToLocalHm,
   timestampToLocalYmd,
   yearMonthFromTimestamp,
 } from "@/lib/dateUtils";
@@ -382,7 +383,7 @@ export function ExpensesDashboard() {
                           >
                             <div className="flex flex-col">
                               <span className="text-[11px] text-zinc-500">
-                                {new Date(exp.createdAt).toLocaleDateString()}
+                                {new Date(exp.createdAt).toLocaleString()}
                               </span>
                               <span className="text-xs font-medium">
                                 {exp.store}
@@ -481,6 +482,9 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
   const [editDate, setEditDate] = useState(() =>
     timestampToLocalYmd(expense.createdAt),
   );
+  const [editTime, setEditTime] = useState(() =>
+    timestampToLocalHm(expense.createdAt),
+  );
 
   useEffect(() => {
     setEditType(expense.type);
@@ -488,6 +492,7 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
     setEditPrice(String(expense.price));
     setEditDescription(expense.description);
     setEditDate(timestampToLocalYmd(expense.createdAt));
+    setEditTime(timestampToLocalHm(expense.createdAt));
     setIsEditing(false);
     setError(null);
   }, [expense.id, expense.type, expense.store, expense.price, expense.description, expense.createdAt]);
@@ -527,13 +532,15 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
       !editStore.trim() ||
       !editDescription.trim() ||
       !editDate ||
+      !editTime ||
       Number.isNaN(numericPrice) ||
       numericPrice <= 0
     ) {
       setError("Fill all fields and use a positive price.");
       return;
     }
-    const createdAt = parseLocalDateYmd(editDate) ?? expense.createdAt;
+    const createdAt =
+      parseLocalDateTimeYmdHm(editDate, editTime) ?? expense.createdAt;
     setIsSaving(true);
     try {
       await db.transact(
@@ -559,6 +566,7 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
     setEditPrice(String(expense.price));
     setEditDescription(expense.description);
     setEditDate(timestampToLocalYmd(expense.createdAt));
+    setEditTime(timestampToLocalHm(expense.createdAt));
     setIsEditing(false);
     setError(null);
   }
@@ -612,16 +620,30 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
               className={inputClass}
             />
           </div>
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-              Date
-            </label>
-            <input
-              type="date"
-              value={editDate}
-              onChange={(e) => setEditDate(e.target.value)}
-              className={inputClass}
-            />
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+                Date
+              </label>
+              <input
+                type="date"
+                value={editDate}
+                onChange={(e) => setEditDate(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+                Time
+              </label>
+              <input
+                type="time"
+                value={editTime}
+                onChange={(e) => setEditTime(e.target.value)}
+                step={60}
+                className={inputClass}
+              />
+            </div>
           </div>
           <div className="space-y-1">
             <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">

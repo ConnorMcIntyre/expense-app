@@ -3,7 +3,11 @@
 import { useState } from "react";
 import db from "@/lib/db";
 import { id } from "@instantdb/react";
-import { localTodayYmd, parseLocalDateYmd } from "@/lib/dateUtils";
+import {
+  localTimeHm,
+  localTodayYmd,
+  parseLocalDateTimeYmdHm,
+} from "@/lib/dateUtils";
 
 export function ExpenseForm() {
   const user = db.useUser();
@@ -12,6 +16,7 @@ export function ExpenseForm() {
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(() => localTodayYmd());
+  const [time, setTime] = useState(() => localTimeHm());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,14 +33,15 @@ export function ExpenseForm() {
       !description ||
       !price ||
       !date ||
+      !time ||
       Number.isNaN(numericPrice) ||
       numericPrice <= 0
     ) {
-      setError("Please fill all fields, choose a date, and use a positive price.");
+      setError("Please fill all fields, choose date & time, and use a positive price.");
       return;
     }
 
-    const createdAt = parseLocalDateYmd(date) ?? Date.now();
+    const createdAt = parseLocalDateTimeYmdHm(date, time) ?? Date.now();
 
     setIsSubmitting(true);
     try {
@@ -56,6 +62,7 @@ export function ExpenseForm() {
       setPrice("");
       setDescription("");
       setDate(localTodayYmd());
+      setTime(localTimeHm());
     } catch (err: any) {
       setError(err?.message ?? "Failed to save expense.");
     } finally {
@@ -104,20 +111,41 @@ export function ExpenseForm() {
           />
         </div>
       </div>
-      <div className="space-y-1.5">
-        <label
-          htmlFor="date"
-          className="block text-xs font-medium text-zinc-600 dark:text-zinc-300"
-        >
-          Date
-        </label>
-        <input
-          id="date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
-        />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <label
+            htmlFor="date"
+            className="block text-xs font-medium text-zinc-600 dark:text-zinc-300"
+          >
+            Date
+          </label>
+          <input
+            id="date"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label
+            htmlFor="time"
+            className="block text-xs font-medium text-zinc-600 dark:text-zinc-300"
+          >
+            Time of transaction
+          </label>
+          <input
+            id="time"
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            step={60}
+            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+          />
+          <p className="text-[11px] text-zinc-400">
+            When the purchase happened (your local time).
+          </p>
+        </div>
       </div>
       <div className="space-y-1.5">
         <label
