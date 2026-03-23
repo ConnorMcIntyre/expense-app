@@ -90,6 +90,9 @@ export function ExpensesDashboard() {
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(
     null,
   );
+  const [recordExpensesScope, setRecordExpensesScope] = useState<
+    "recent" | "all"
+  >("recent");
 
   const toggleYearlyCategoryFilter = useCallback((typeKey: string) => {
     setYearlyCategoryTypeFilter((prev) =>
@@ -103,6 +106,12 @@ export function ExpensesDashboard() {
 
   useEffect(() => {
     if (activeTab !== "yearly") setYearlyCategoryTypeFilter(null);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "expenses") {
+      setRecordExpensesScope("recent");
+    }
   }, [activeTab]);
 
   const { isLoading, error, data } = db.useQuery(
@@ -138,6 +147,22 @@ export function ExpensesDashboard() {
     selectedExpenseId != null
       ? expenses.find((e) => e.id === selectedExpenseId) ?? null
       : null;
+
+  const recentExpensesFive = useMemo(
+    () => expenses.slice(0, 5),
+    [expenses],
+  );
+
+  const recordTabListExpenses =
+    recordExpensesScope === "all" ? expenses : recentExpensesFive;
+
+  useEffect(() => {
+    if (recordExpensesScope !== "recent" || selectedExpenseId == null) return;
+    const stillVisible = recentExpensesFive.some(
+      (e) => e.id === selectedExpenseId,
+    );
+    if (!stillVisible) setSelectedExpenseId(null);
+  }, [recordExpensesScope, selectedExpenseId, recentExpensesFive]);
 
   const { total, byType } = useMemo(() => {
     const summary = new Map<string, number>();
@@ -329,14 +354,36 @@ export function ExpensesDashboard() {
             </div>
 
             <div className="rounded-2xl border border-zinc-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
-              <div className="mb-3 flex items-baseline justify-between gap-2">
-                <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-                  Recent expenses
-                </h2>
+              <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+                <div>
+                  <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+                    {recordExpensesScope === "all"
+                      ? "All expenses"
+                      : "Recent expenses"}
+                  </h2>
+                  {recordExpensesScope === "recent" && expenses.length > 0 ? (
+                    <p className="text-[11px] text-zinc-400">
+                      Showing {recentExpensesFive.length} most recent
+                      {expenses.length > 5
+                        ? ` of ${expenses.length} total`
+                        : ""}
+                      .
+                    </p>
+                  ) : null}
+                </div>
                 <span className="text-xs text-zinc-400">
                   {expenses.length} total
                 </span>
               </div>
+              {recordExpensesScope === "all" ? (
+                <button
+                  type="button"
+                  onClick={() => setRecordExpensesScope("recent")}
+                  className="mb-3 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-200 dark:hover:bg-zinc-800 sm:w-auto"
+                >
+                  ← Back to recent
+                </button>
+              ) : null}
               {isLoading ? (
                 <p className="text-sm text-zinc-500">Loading expenses...</p>
               ) : error ? (
@@ -350,19 +397,31 @@ export function ExpensesDashboard() {
               ) : (
                 <>
                   <ExpensesList
-                    expenses={expenses}
+                    expenses={recordTabListExpenses}
+                    selectedExpenseId={selectedExpenseId}
                     onSelect={(expense) =>
                       setSelectedExpenseId(
                         expense.id === selectedExpenseId ? null : expense.id,
                       )
                     }
                   />
-                  {selectedExpense && (
+                  {selectedExpense ? (
                     <ExpenseDetails
                       key={selectedExpense.id}
                       expense={selectedExpense}
+                      onDeleted={() => setSelectedExpenseId(null)}
                     />
-                  )}
+                  ) : null}
+                  {recordExpensesScope === "recent" &&
+                  expenses.length > 5 ? (
+                    <button
+                      type="button"
+                      onClick={() => setRecordExpensesScope("all")}
+                      className="mt-3 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm font-medium text-zinc-800 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
+                    >
+                      All expenses
+                    </button>
+                  ) : null}
                 </>
               )}
             </div>
@@ -744,9 +803,11 @@ export function ExpensesDashboard() {
 
 function ExpensesList({
   expenses,
+  selectedExpenseId,
   onSelect,
 }: {
   expenses: ExpenseEntity[];
+  selectedExpenseId?: string | null;
   onSelect?: (expense: ExpenseEntity) => void;
 }) {
   return (
@@ -761,7 +822,11 @@ function ExpensesList({
         {expenses.map((expense) => (
           <li
             key={expense.id}
-            className="grid cursor-pointer grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.25fr)] gap-3 px-4 py-2.5 hover:bg-zinc-100/70 dark:hover:bg-zinc-900/60"
+            className={`grid cursor-pointer grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.25fr)] gap-3 px-4 py-2.5 hover:bg-zinc-100/70 dark:hover:bg-zinc-900/60 ${
+              selectedExpenseId === expense.id
+                ? "bg-zinc-200/60 dark:bg-zinc-800/80"
+                : ""
+            }`}
             onClick={() => onSelect?.(expense)}
           >
             <span className="truncate text-xs text-zinc-500">
@@ -788,11 +853,18 @@ function ExpensesList({
   );
 }
 
-function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
+function ExpenseDetails({
+  expense,
+  onDeleted,
+}: {
+  expense: ExpenseEntity;
+  onDeleted?: () => void;
+}) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [editType, setEditType] = useState(expense.type);
   const [editStore, setEditStore] = useState(expense.store);
   const [editPrice, setEditPrice] = useState(String(expense.price));
@@ -895,23 +967,54 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
     setError(null);
   }
 
+  async function handleDelete() {
+    if (
+      !window.confirm(
+        "Delete this expense? This cannot be undone.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setIsDeleting(true);
+    try {
+      await db.transact(db.tx.expenses[expense.id].delete());
+      onDeleted?.();
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to delete expense.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   const inputClass =
     "w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800";
 
   return (
     <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
           Expense details
         </span>
         {!isEditing ? (
-          <button
-            type="button"
-            onClick={openEditMode}
-            className="rounded-lg border border-zinc-300 px-2 py-1 text-[11px] font-medium text-zinc-800 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            Edit
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={openEditMode}
+              disabled={isDeleting}
+              className="rounded-lg border border-zinc-300 px-2 py-1 text-[11px] font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-800 transition hover:bg-red-100 disabled:opacity-50 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/70"
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -1037,17 +1140,27 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
             <button
               type="button"
               onClick={handleCancelEdit}
-              disabled={isSaving}
+              disabled={isSaving || isDeleting}
               className="flex-1 rounded-lg border border-zinc-300 py-1.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isSaving}
+              disabled={isSaving || isDeleting}
               className="flex-1 rounded-lg bg-zinc-900 py-1.5 text-[11px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
             >
               {isSaving ? "Saving..." : "Save changes"}
+            </button>
+          </div>
+          <div className="border-t border-zinc-200 pt-3 dark:border-zinc-700">
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isSaving || isDeleting}
+              className="w-full rounded-lg border border-red-200 bg-red-50 py-1.5 text-[11px] font-medium text-red-800 transition hover:bg-red-100 disabled:opacity-50 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/70"
+            >
+              {isDeleting ? "Deleting..." : "Delete expense"}
             </button>
           </div>
         </form>
