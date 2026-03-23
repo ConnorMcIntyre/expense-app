@@ -61,6 +61,11 @@ export function yearMonthFromTimestamp(ts: number): string {
   return `${y}-${m}`;
 }
 
+/** Local calendar year for a timestamp (for yearly breakdowns). */
+export function calendarYearFromTimestamp(ts: number): number {
+  return new Date(ts).getFullYear();
+}
+
 /** YYYY-MM-DD in local time from a timestamp (for <input type="date">). */
 export function timestampToLocalYmd(ts: number): string {
   const d = new Date(ts);

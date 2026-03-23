@@ -5,6 +5,7 @@ import db from "@/lib/db";
 import { id, type InstaQLEntity } from "@instantdb/react";
 import schema from "../../instant.schema";
 import {
+  calendarYearFromTimestamp,
   isLocalMidnight,
   localTimeHm,
   localYearMonthNow,
@@ -19,7 +20,7 @@ import { ExpenseForm } from "./ExpenseForm";
 type ExpenseEntity = InstaQLEntity<typeof schema, "expenses", { owner: {} }>;
 type BudgetEntity = InstaQLEntity<typeof schema, "budgets", { owner: {} }>;
 
-type ActiveTab = "expenses" | "totals" | "budget" | "compare";
+type ActiveTab = "expenses" | "totals" | "yearly" | "budget" | "compare";
 
 const PIE_COLORS = [
   "#6366f1",
@@ -74,6 +75,10 @@ export function ExpensesDashboard() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("expenses");
   const [totalsMonth, setTotalsMonth] = useState(() => localYearMonthNow());
   const [totalsStore, setTotalsStore] = useState("");
+  const [yearlyYear, setYearlyYear] = useState(() =>
+    String(new Date().getFullYear()),
+  );
+  const [yearlyStore, setYearlyStore] = useState("");
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(
     null,
   );
@@ -153,6 +158,51 @@ export function ExpensesDashboard() {
     );
   }, [monthExpensesForTotals, totalsStore]);
 
+  const yearOptions = useMemo(() => {
+    const set = new Set<number>();
+    set.add(new Date().getFullYear());
+    const selected = Number.parseInt(yearlyYear, 10);
+    if (!Number.isNaN(selected)) set.add(selected);
+    for (const e of expenses) {
+      set.add(calendarYearFromTimestamp(e.createdAt));
+    }
+    return Array.from(set).sort((a, b) => b - a);
+  }, [expenses, yearlyYear]);
+
+  const yearExpensesForYear = useMemo(() => {
+    const y = Number.parseInt(yearlyYear, 10);
+    if (Number.isNaN(y)) return [];
+    return expenses.filter(
+      (exp) => calendarYearFromTimestamp(exp.createdAt) === y,
+    );
+  }, [expenses, yearlyYear]);
+
+  const filteredYearExpenses = useMemo(() => {
+    const q = yearlyStore.trim().toLowerCase();
+    if (!q) return yearExpensesForYear;
+    return yearExpensesForYear.filter((exp) =>
+      (exp.store || "").toLowerCase().includes(q),
+    );
+  }, [yearExpensesForYear, yearlyStore]);
+
+  const { yearlyTotal, yearlyByType } = useMemo(() => {
+    const summary = new Map<string, number>();
+    let runningTotal = 0;
+    for (const exp of filteredYearExpenses) {
+      const price = Number(exp.price) || 0;
+      runningTotal += price;
+      const key = (exp.type || "Uncategorized").trim() || "Uncategorized";
+      summary.set(key, (summary.get(key) ?? 0) + price);
+    }
+    const byTypeArr = Array.from(summary.entries())
+      .map(([type, amount]) => ({
+        type,
+        amount,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+    return { yearlyTotal: runningTotal, yearlyByType: byTypeArr };
+  }, [filteredYearExpenses]);
+
   return (
     <div className="min-h-screen bg-background text-foreground px-4 py-8">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -182,11 +232,11 @@ export function ExpensesDashboard() {
           )}
         </header>
 
-        <nav className="flex gap-2 rounded-full border border-zinc-200 bg-zinc-100/60 p-1 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60">
+        <nav className="flex flex-wrap gap-2 rounded-2xl border border-zinc-200 bg-zinc-100/60 p-1 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60">
           <button
             type="button"
             onClick={() => setActiveTab("expenses")}
-            className={`flex-1 rounded-full px-3 py-1.5 transition ${
+            className={`min-w-[6.5rem] flex-1 rounded-full px-3 py-1.5 transition ${
               activeTab === "expenses"
                 ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
                 : "hover:bg-zinc-200/80 dark:hover:bg-zinc-800/80"
@@ -197,18 +247,29 @@ export function ExpensesDashboard() {
           <button
             type="button"
             onClick={() => setActiveTab("totals")}
-            className={`flex-1 rounded-full px-3 py-1.5 transition ${
+            className={`min-w-[6.5rem] flex-1 rounded-full px-3 py-1.5 transition ${
               activeTab === "totals"
                 ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
                 : "hover:bg-zinc-200/80 dark:hover:bg-zinc-800/80"
             }`}
           >
-            Total Expenses
+            Total Expenses by Month
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("yearly")}
+            className={`min-w-[6.5rem] flex-1 rounded-full px-3 py-1.5 transition ${
+              activeTab === "yearly"
+                ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
+                : "hover:bg-zinc-200/80 dark:hover:bg-zinc-800/80"
+            }`}
+          >
+            Yearly Breakdown
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("budget")}
-            className={`flex-1 rounded-full px-3 py-1.5 transition ${
+            className={`min-w-[6.5rem] flex-1 rounded-full px-3 py-1.5 transition ${
               activeTab === "budget"
                 ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
                 : "hover:bg-zinc-200/80 dark:hover:bg-zinc-800/80"
@@ -219,7 +280,7 @@ export function ExpensesDashboard() {
           <button
             type="button"
             onClick={() => setActiveTab("compare")}
-            className={`flex-1 rounded-full px-3 py-1.5 transition ${
+            className={`min-w-[6.5rem] flex-1 rounded-full px-3 py-1.5 transition ${
               activeTab === "compare"
                 ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
                 : "hover:bg-zinc-200/80 dark:hover:bg-zinc-800/80"
@@ -283,7 +344,7 @@ export function ExpensesDashboard() {
               <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h2 className="text-sm font-medium uppercase tracking-wide text-black dark:text-zinc-500">
-                    Total Expenses
+                    Total Expenses by Month
                   </h2>
                   <p className="text-xs text-black dark:text-zinc-400">
                     Showing expenses for{" "}
@@ -424,6 +485,177 @@ export function ExpensesDashboard() {
                 </p>
               ) : (
                 <PieChart byType={byType} />
+              )}
+            </div>
+          </section>
+        ) : activeTab === "yearly" ? (
+          <section className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <div className="rounded-2xl border border-zinc-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-sm font-medium uppercase tracking-wide text-black dark:text-zinc-500">
+                    Yearly Breakdown
+                  </h2>
+                  <p className="text-xs text-black dark:text-zinc-400">
+                    Totals by category for calendar year{" "}
+                    <span className="font-medium">
+                      {formatYearLabel(yearlyYear)}
+                    </span>
+                    {yearlyStore.trim()
+                      ? ` (stores matching "${yearlyStore.trim()}")`
+                      : ""}
+                    .
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="yearlyYear"
+                      className="block text-[11px] font-medium uppercase tracking-wide text-black dark:text-zinc-500"
+                    >
+                      Year
+                    </label>
+                    <select
+                      id="yearlyYear"
+                      value={yearlyYear}
+                      onChange={(e) => setYearlyYear(e.target.value)}
+                      className="w-full min-w-[8rem] rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800 sm:w-40"
+                    >
+                      {yearOptions.map((y) => (
+                        <option key={y} value={String(y)}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="yearlyStore"
+                      className="block text-[11px] font-medium uppercase tracking-wide text-black dark:text-zinc-500"
+                    >
+                      Store filter (year)
+                    </label>
+                    <input
+                      id="yearlyStore"
+                      type="text"
+                      value={yearlyStore}
+                      onChange={(e) => setYearlyStore(e.target.value)}
+                      placeholder="e.g. Trader Joe's"
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+                    />
+                  </div>
+                </div>
+              </div>
+              {expenses.length === 0 ? (
+                <p className="text-sm text-zinc-500">
+                  No expenses yet. Add an expense to see a yearly breakdown.
+                </p>
+              ) : yearExpensesForYear.length === 0 ? (
+                <p className="text-sm text-zinc-500">
+                  No expenses in {formatYearLabel(yearlyYear)} yet.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm text-black dark:text-zinc-500">
+                      Total spent (filtered)
+                    </span>
+                    <span className="text-2xl font-semibold tabular-nums text-black dark:text-zinc-50">
+                      ${yearlyTotal.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      By category
+                    </h3>
+                    <ul className="space-y-1.5 text-sm">
+                      {yearlyByType.map((row, index) => {
+                        const percentage =
+                          yearlyTotal > 0
+                            ? (row.amount / yearlyTotal) * 100
+                            : 0;
+                        return (
+                          <li
+                            key={row.type}
+                            className="flex items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="inline-block h-2 w-2 rounded-full"
+                                style={{
+                                  backgroundColor:
+                                    PIE_COLORS[index % PIE_COLORS.length],
+                                }}
+                              />
+                              <span className="text-zinc-700 dark:text-zinc-200">
+                                {row.type}
+                              </span>
+                            </div>
+                            <div className="flex items-baseline gap-3 text-xs text-zinc-500">
+                              <span className="tabular-nums">
+                                ${row.amount.toFixed(2)}
+                              </span>
+                              <span className="tabular-nums">
+                                {percentage.toFixed(1)}%
+                              </span>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      Expenses for this year
+                    </h3>
+                    {filteredYearExpenses.length === 0 ? (
+                      <p className="text-xs text-zinc-500">
+                        No expenses match this store filter for the selected
+                        year.
+                      </p>
+                    ) : (
+                      <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-zinc-100 bg-zinc-50 p-2 text-xs text-black dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-200">
+                        {filteredYearExpenses.map((exp) => (
+                          <li
+                            key={exp.id}
+                            className="flex items-baseline justify-between gap-3 rounded-md px-2 py-1 hover:bg-zinc-100/80 dark:hover:bg-zinc-900/60"
+                          >
+                            <div className="flex flex-col">
+                              <span className="text-[11px] text-zinc-500">
+                                {formatExpenseWhen(exp.createdAt)}
+                              </span>
+                              <span className="text-xs font-medium">
+                                {exp.store}
+                              </span>
+                              <span className="text-[11px] text-zinc-500">
+                                {exp.type} — {exp.description}
+                              </span>
+                            </div>
+                            <span className="text-xs font-semibold tabular-nums">
+                              ${Number(exp.price).toFixed(2)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-center rounded-2xl border border-zinc-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
+              {expenses.length === 0 ||
+              yearExpensesForYear.length === 0 ||
+              yearlyTotal === 0 ? (
+                <p className="text-sm text-zinc-500">
+                  {expenses.length === 0
+                    ? "Add expenses to see a yearly breakdown by category."
+                    : yearExpensesForYear.length === 0
+                      ? "No expenses in this year to chart."
+                      : "No expenses match the current filters for the chart."}
+                </p>
+              ) : (
+                <PieChart byType={yearlyByType} />
               )}
             </div>
           </section>
