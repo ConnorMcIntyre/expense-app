@@ -3,6 +3,7 @@
 import { useState } from "react";
 import db from "@/lib/db";
 import { id } from "@instantdb/react";
+import { localTodayYmd, parseLocalDateYmd } from "@/lib/dateUtils";
 
 export function ExpenseForm() {
   const user = db.useUser();
@@ -10,9 +11,7 @@ export function ExpenseForm() {
   const [store, setStore] = useState("");
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
-  const [date, setDate] = useState(
-    () => new Date().toISOString().slice(0, 10), // YYYY-MM-DD
-  );
+  const [date, setDate] = useState(() => localTodayYmd());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,8 +35,7 @@ export function ExpenseForm() {
       return;
     }
 
-    const parsedDate = Date.parse(date);
-    const createdAt = Number.isNaN(parsedDate) ? Date.now() : parsedDate;
+    const createdAt = parseLocalDateYmd(date) ?? Date.now();
 
     setIsSubmitting(true);
     try {
@@ -57,7 +55,7 @@ export function ExpenseForm() {
       setStore("");
       setPrice("");
       setDescription("");
-      setDate(new Date().toISOString().slice(0, 10));
+      setDate(localTodayYmd());
     } catch (err: any) {
       setError(err?.message ?? "Failed to save expense.");
     } finally {

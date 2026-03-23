@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import db from "@/lib/db";
 import { id, type InstaQLEntity } from "@instantdb/react";
 import schema from "../../instant.schema";
+import {
+  localYearMonthNow,
+  parseLocalDateYmd,
+  timestampToLocalYmd,
+  yearMonthFromTimestamp,
+} from "@/lib/dateUtils";
 import { ExpenseForm } from "./ExpenseForm";
 
 type ExpenseEntity = InstaQLEntity<typeof schema, "expenses", { owner: {} }>;
@@ -55,9 +61,7 @@ export function ExpensesDashboard() {
   const user = db.useUser();
   const userId = user?.id;
   const [activeTab, setActiveTab] = useState<ActiveTab>("expenses");
-  const [totalsMonth, setTotalsMonth] = useState(
-    () => new Date().toISOString().slice(0, 7), // YYYY-MM
-  );
+  const [totalsMonth, setTotalsMonth] = useState(() => localYearMonthNow());
   const [totalsStore, setTotalsStore] = useState("");
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(
     null,
@@ -102,7 +106,7 @@ export function ExpensesDashboard() {
     let runningTotal = 0;
 
     for (const exp of expenses) {
-      const monthKey = new Date(exp.createdAt).toISOString().slice(0, 7);
+      const monthKey = yearMonthFromTimestamp(exp.createdAt);
       if (totalsMonth && monthKey !== totalsMonth) continue;
 
       const price = Number(exp.price) || 0;
@@ -124,7 +128,7 @@ export function ExpensesDashboard() {
   const monthExpensesForTotals = useMemo(
     () =>
       expenses.filter((exp) => {
-        const monthKey = new Date(exp.createdAt).toISOString().slice(0, 7);
+        const monthKey = yearMonthFromTimestamp(exp.createdAt);
         return totalsMonth ? monthKey === totalsMonth : true;
       }),
     [expenses, totalsMonth],
@@ -468,6 +472,25 @@ function ExpensesList({
 function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editType, setEditType] = useState(expense.type);
+  const [editStore, setEditStore] = useState(expense.store);
+  const [editPrice, setEditPrice] = useState(String(expense.price));
+  const [editDescription, setEditDescription] = useState(expense.description);
+  const [editDate, setEditDate] = useState(() =>
+    timestampToLocalYmd(expense.createdAt),
+  );
+
+  useEffect(() => {
+    setEditType(expense.type);
+    setEditStore(expense.store);
+    setEditPrice(String(expense.price));
+    setEditDescription(expense.description);
+    setEditDate(timestampToLocalYmd(expense.createdAt));
+    setIsEditing(false);
+    setError(null);
+  }, [expense.id, expense.type, expense.store, expense.price, expense.description, expense.createdAt]);
 
   async function handleReceiptChange(
     e: React.ChangeEvent<HTMLInputElement>,
@@ -491,39 +514,191 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
       setError(err?.message ?? "Failed to upload receipt.");
     } finally {
       setIsUploading(false);
-      // allow re-uploading same file if desired
       e.target.value = "";
     }
   }
 
+  async function handleSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const numericPrice = Number(editPrice);
+    if (
+      !editType.trim() ||
+      !editStore.trim() ||
+      !editDescription.trim() ||
+      !editDate ||
+      Number.isNaN(numericPrice) ||
+      numericPrice <= 0
+    ) {
+      setError("Fill all fields and use a positive price.");
+      return;
+    }
+    const createdAt = parseLocalDateYmd(editDate) ?? expense.createdAt;
+    setIsSaving(true);
+    try {
+      await db.transact(
+        db.tx.expenses[expense.id].update({
+          type: editType.trim(),
+          store: editStore.trim(),
+          price: numericPrice,
+          description: editDescription.trim(),
+          createdAt,
+        }),
+      );
+      setIsEditing(false);
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to update expense.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleCancelEdit() {
+    setEditType(expense.type);
+    setEditStore(expense.store);
+    setEditPrice(String(expense.price));
+    setEditDescription(expense.description);
+    setEditDate(timestampToLocalYmd(expense.createdAt));
+    setIsEditing(false);
+    setError(null);
+  }
+
+  const inputClass =
+    "w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800";
+
   return (
     <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
-      <div className="mb-2 flex items-baseline justify-between gap-3">
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold">{expense.type}</span>
-          <span className="text-[11px] text-zinc-500">
-            {new Date(expense.createdAt).toLocaleString()}
-          </span>
-        </div>
-        <span className="text-sm font-semibold tabular-nums">
-          ${Number(expense.price).toFixed(2)}
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+          Expense details
         </span>
+        {!isEditing ? (
+          <button
+            type="button"
+            onClick={() => setIsEditing(true)}
+            className="rounded-lg border border-zinc-300 px-2 py-1 text-[11px] font-medium text-zinc-800 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            Edit
+          </button>
+        ) : null}
       </div>
-      <div className="mb-3 space-y-1.5">
-        <div className="text-[11px] uppercase tracking-wide text-zinc-500">
-          Store
-        </div>
-        <div className="text-xs">{expense.store}</div>
-      </div>
-      <div className="mb-3 space-y-1.5">
-        <div className="text-[11px] uppercase tracking-wide text-zinc-500">
-          Notes
-        </div>
-        <div className="whitespace-pre-wrap text-xs">
-          {expense.description || "No notes added."}
-        </div>
-      </div>
-      <div className="space-y-2">
+
+      {isEditing ? (
+        <form onSubmit={handleSaveEdit} className="space-y-3">
+          {error && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+              {error}
+            </div>
+          )}
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+              Expense type
+            </label>
+            <input
+              type="text"
+              value={editType}
+              onChange={(e) => setEditType(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+              Store
+            </label>
+            <input
+              type="text"
+              value={editStore}
+              onChange={(e) => setEditStore(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+              Date
+            </label>
+            <input
+              type="date"
+              value={editDate}
+              onChange={(e) => setEditDate(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+              Price
+            </label>
+            <div className="flex items-center rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs focus-within:border-zinc-400 focus-within:ring-1 focus-within:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:focus-within:border-zinc-500 dark:focus-within:ring-zinc-800">
+              <span className="mr-1 text-zinc-500">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editPrice}
+                onChange={(e) => setEditPrice(e.target.value)}
+                className="w-full border-none bg-transparent text-black outline-none dark:text-zinc-50"
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+              Notes
+            </label>
+            <textarea
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              rows={3}
+              className={`${inputClass} resize-none`}
+            />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              disabled={isSaving}
+              className="flex-1 rounded-lg border border-zinc-300 py-1.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="flex-1 rounded-lg bg-zinc-900 py-1.5 text-[11px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+            >
+              {isSaving ? "Saving..." : "Save changes"}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold">{expense.type}</span>
+              <span className="text-[11px] text-zinc-500">
+                {new Date(expense.createdAt).toLocaleString()}
+              </span>
+            </div>
+            <span className="text-sm font-semibold tabular-nums">
+              ${Number(expense.price).toFixed(2)}
+            </span>
+          </div>
+          <div className="mb-3 space-y-1.5">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500">
+              Store
+            </div>
+            <div className="text-xs">{expense.store}</div>
+          </div>
+          <div className="mb-3 space-y-1.5">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500">
+              Notes
+            </div>
+            <div className="whitespace-pre-wrap text-xs">
+              {expense.description || "No notes added."}
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="space-y-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
         <div className="text-[11px] uppercase tracking-wide text-zinc-500">
           Receipt
         </div>
@@ -541,7 +716,7 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
             No receipt uploaded yet.
           </p>
         )}
-        {error && (
+        {error && !isEditing && (
           <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
             {error}
           </div>
@@ -644,9 +819,7 @@ function BudgetSection({ budgets }: { budgets: BudgetEntity[] }) {
   const userId = user?.id;
   const [entries, setEntries] = useState<BudgetEntry[]>([]);
   const [type, setType] = useState("");
-  const [month, setMonth] = useState(
-    () => new Date().toISOString().slice(0, 7), // YYYY-MM
-  );
+  const [month, setMonth] = useState(() => localYearMonthNow());
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -900,14 +1073,12 @@ function CompareSection({
   expenses: ExpenseEntity[];
   budgets: BudgetEntity[];
 }) {
-  const [month, setMonth] = useState(
-    () => new Date().toISOString().slice(0, 7), // YYYY-MM
-  );
+  const [month, setMonth] = useState(() => localYearMonthNow());
 
   const monthExpenses = useMemo(
     () =>
       expenses.filter((exp) => {
-        const key = new Date(exp.createdAt).toISOString().slice(0, 7);
+        const key = yearMonthFromTimestamp(exp.createdAt);
         return key === month;
       }),
     [expenses, month],
