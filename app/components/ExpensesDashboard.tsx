@@ -93,6 +93,8 @@ export function ExpensesDashboard() {
   const [recordExpensesScope, setRecordExpensesScope] = useState<
     "recent" | "all"
   >("recent");
+  /** Empty = all months (default) when viewing All expenses */
+  const [recordAllExpensesMonth, setRecordAllExpensesMonth] = useState("");
 
   const toggleYearlyCategoryFilter = useCallback((typeKey: string) => {
     setYearlyCategoryTypeFilter((prev) =>
@@ -111,8 +113,15 @@ export function ExpensesDashboard() {
   useEffect(() => {
     if (activeTab !== "expenses") {
       setRecordExpensesScope("recent");
+      setRecordAllExpensesMonth("");
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (recordExpensesScope !== "all") {
+      setRecordAllExpensesMonth("");
+    }
+  }, [recordExpensesScope]);
 
   const { isLoading, error, data } = db.useQuery(
     userId
@@ -153,8 +162,18 @@ export function ExpensesDashboard() {
     [expenses],
   );
 
+  const recordAllFilteredExpenses = useMemo(() => {
+    const m = recordAllExpensesMonth.trim();
+    if (!m) return expenses;
+    return expenses.filter(
+      (e) => yearMonthFromTimestamp(e.createdAt) === m,
+    );
+  }, [expenses, recordAllExpensesMonth]);
+
   const recordTabListExpenses =
-    recordExpensesScope === "all" ? expenses : recentExpensesFive;
+    recordExpensesScope === "all"
+      ? recordAllFilteredExpenses
+      : recentExpensesFive;
 
   useEffect(() => {
     if (recordExpensesScope !== "recent" || selectedExpenseId == null) return;
@@ -163,6 +182,18 @@ export function ExpensesDashboard() {
     );
     if (!stillVisible) setSelectedExpenseId(null);
   }, [recordExpensesScope, selectedExpenseId, recentExpensesFive]);
+
+  useEffect(() => {
+    if (recordExpensesScope !== "all" || selectedExpenseId == null) return;
+    const stillVisible = recordAllFilteredExpenses.some(
+      (e) => e.id === selectedExpenseId,
+    );
+    if (!stillVisible) setSelectedExpenseId(null);
+  }, [
+    recordExpensesScope,
+    selectedExpenseId,
+    recordAllFilteredExpenses,
+  ]);
 
   const { total, byType } = useMemo(() => {
     const summary = new Map<string, number>();
@@ -370,19 +401,59 @@ export function ExpensesDashboard() {
                       .
                     </p>
                   ) : null}
+                  {recordExpensesScope === "all" && expenses.length > 0 ? (
+                    <p className="text-[11px] text-zinc-400">
+                      {recordAllExpensesMonth.trim()
+                        ? `Filtered to ${formatMonthLabel(recordAllExpensesMonth)} (${recordTabListExpenses.length} of ${expenses.length} expenses).`
+                        : "Showing every expense."}
+                    </p>
+                  ) : null}
                 </div>
                 <span className="text-xs text-zinc-400">
                   {expenses.length} total
                 </span>
               </div>
               {recordExpensesScope === "all" ? (
-                <button
-                  type="button"
-                  onClick={() => setRecordExpensesScope("recent")}
-                  className="mb-3 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-200 dark:hover:bg-zinc-800 sm:w-auto"
-                >
-                  ← Back to recent
-                </button>
+                <div className="mb-3 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setRecordExpensesScope("recent")}
+                    className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-200 dark:hover:bg-zinc-800 sm:w-auto"
+                  >
+                    ← Back to recent
+                  </button>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="recordAllExpensesMonth"
+                        className="block text-[11px] font-medium uppercase tracking-wide text-zinc-500"
+                      >
+                        Month filter
+                      </label>
+                      <input
+                        id="recordAllExpensesMonth"
+                        type="month"
+                        value={recordAllExpensesMonth}
+                        onChange={(e) =>
+                          setRecordAllExpensesMonth(e.target.value)
+                        }
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800 sm:w-40"
+                      />
+                      <p className="text-[11px] text-zinc-400">
+                        Leave unset to include all months (default).
+                      </p>
+                    </div>
+                    {recordAllExpensesMonth ? (
+                      <button
+                        type="button"
+                        onClick={() => setRecordAllExpensesMonth("")}
+                        className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      >
+                        Show all months
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
               ) : null}
               {isLoading ? (
                 <p className="text-sm text-zinc-500">Loading expenses...</p>
@@ -396,15 +467,25 @@ export function ExpensesDashboard() {
                 </p>
               ) : (
                 <>
-                  <ExpensesList
-                    expenses={recordTabListExpenses}
-                    selectedExpenseId={selectedExpenseId}
-                    onSelect={(expense) =>
-                      setSelectedExpenseId(
-                        expense.id === selectedExpenseId ? null : expense.id,
-                      )
-                    }
-                  />
+                  {recordExpensesScope === "all" &&
+                  recordTabListExpenses.length === 0 ? (
+                    <p className="text-sm text-zinc-500">
+                      No expenses in{" "}
+                      {formatMonthLabel(recordAllExpensesMonth)}.
+                    </p>
+                  ) : (
+                    <ExpensesList
+                      expenses={recordTabListExpenses}
+                      selectedExpenseId={selectedExpenseId}
+                      onSelect={(expense) =>
+                        setSelectedExpenseId(
+                          expense.id === selectedExpenseId
+                            ? null
+                            : expense.id,
+                        )
+                      }
+                    />
+                  )}
                   {selectedExpense ? (
                     <ExpenseDetails
                       key={selectedExpense.id}
