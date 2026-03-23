@@ -455,6 +455,14 @@ export function ExpensesDashboard() {
                   </div>
                 </div>
               ) : null}
+              {recordExpensesScope === "all" && selectedExpense ? (
+                <ExpenseDetails
+                  key={selectedExpense.id}
+                  expense={selectedExpense}
+                  onDeleted={() => setSelectedExpenseId(null)}
+                  onClose={() => setSelectedExpenseId(null)}
+                />
+              ) : null}
               {isLoading ? (
                 <p className="text-sm text-zinc-500">Loading expenses...</p>
               ) : error ? (
@@ -486,11 +494,12 @@ export function ExpensesDashboard() {
                       }
                     />
                   )}
-                  {selectedExpense ? (
+                  {recordExpensesScope === "recent" && selectedExpense ? (
                     <ExpenseDetails
                       key={selectedExpense.id}
                       expense={selectedExpense}
                       onDeleted={() => setSelectedExpenseId(null)}
+                      onClose={() => setSelectedExpenseId(null)}
                     />
                   ) : null}
                   {recordExpensesScope === "recent" &&
@@ -937,9 +946,11 @@ function ExpensesList({
 function ExpenseDetails({
   expense,
   onDeleted,
+  onClose,
 }: {
   expense: ExpenseEntity;
   onDeleted?: () => void;
+  onClose?: () => void;
 }) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1077,7 +1088,17 @@ function ExpenseDetails({
         <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
           Expense details
         </span>
-        {!isEditing ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-zinc-300 px-2 py-1 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              Close
+            </button>
+          ) : null}
+          {!isEditing ? (
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -1097,6 +1118,7 @@ function ExpenseDetails({
             </button>
           </div>
         ) : null}
+        </div>
       </div>
 
       {isEditing ? (
