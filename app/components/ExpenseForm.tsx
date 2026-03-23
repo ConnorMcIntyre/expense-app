@@ -7,6 +7,7 @@ import {
   localTimeHm,
   localTodayYmd,
   parseLocalDateTimeYmdHm,
+  parseLocalDateYmd,
 } from "@/lib/dateUtils";
 
 export function ExpenseForm() {
@@ -17,6 +18,7 @@ export function ExpenseForm() {
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(() => localTodayYmd());
   const [time, setTime] = useState(() => localTimeHm());
+  const [includeTime, setIncludeTime] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,15 +35,21 @@ export function ExpenseForm() {
       !description ||
       !price ||
       !date ||
-      !time ||
+      (includeTime && !time) ||
       Number.isNaN(numericPrice) ||
       numericPrice <= 0
     ) {
-      setError("Please fill all fields, choose date & time, and use a positive price.");
+      setError(
+        includeTime
+          ? "Please fill all fields, choose date & time, and use a positive price."
+          : "Please fill all fields, choose a date, and use a positive price.",
+      );
       return;
     }
 
-    const createdAt = parseLocalDateTimeYmdHm(date, time) ?? Date.now();
+    const createdAt = includeTime
+      ? (parseLocalDateTimeYmdHm(date, time) ?? Date.now())
+      : (parseLocalDateYmd(date) ?? Date.now());
 
     setIsSubmitting(true);
     try {
@@ -63,6 +71,7 @@ export function ExpenseForm() {
       setDescription("");
       setDate(localTodayYmd());
       setTime(localTimeHm());
+      setIncludeTime(false);
     } catch (err: any) {
       setError(err?.message ?? "Failed to save expense.");
     } finally {
@@ -111,7 +120,7 @@ export function ExpenseForm() {
           />
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-3">
         <div className="space-y-1.5">
           <label
             htmlFor="date"
@@ -124,28 +133,48 @@ export function ExpenseForm() {
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800 sm:max-w-xs"
           />
         </div>
-        <div className="space-y-1.5">
-          <label
-            htmlFor="time"
-            className="block text-xs font-medium text-zinc-600 dark:text-zinc-300"
-          >
-            Time of transaction
-          </label>
+        <label className="flex cursor-pointer items-start gap-2 text-xs text-zinc-700 dark:text-zinc-300">
           <input
-            id="time"
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            step={60}
-            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+            type="checkbox"
+            checked={includeTime}
+            onChange={(e) => {
+              const on = e.target.checked;
+              setIncludeTime(on);
+              if (on) setTime(localTimeHm());
+            }}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400 dark:border-zinc-600 dark:bg-zinc-950 dark:focus:ring-zinc-600"
           />
-          <p className="text-[11px] text-zinc-400">
-            When the purchase happened (your local time).
-          </p>
-        </div>
+          <span>
+            <span className="font-medium text-zinc-800 dark:text-zinc-200">
+              Include time of transaction
+            </span>
+            <span className="mt-0.5 block text-[11px] font-normal text-zinc-500">
+              Off by default — only the date is saved. Turn on to record when
+              the purchase happened.
+            </span>
+          </span>
+        </label>
+        {includeTime ? (
+          <div className="space-y-1.5 sm:max-w-xs">
+            <label
+              htmlFor="time"
+              className="block text-xs font-medium text-zinc-600 dark:text-zinc-300"
+            >
+              Time
+            </label>
+            <input
+              id="time"
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              step={60}
+              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-black outline-none ring-0 transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+            />
+          </div>
+        ) : null}
       </div>
       <div className="space-y-1.5">
         <label

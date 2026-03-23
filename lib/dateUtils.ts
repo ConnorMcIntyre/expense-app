@@ -139,3 +139,17 @@ export function parseLocalDateTimeYmdHm(
   }
   return dt.getTime();
 }
+
+/**
+ * True when the instant is exactly local midnight (00:00:00.000).
+ * Used to guess "date only" vs "specific time" for the optional time UI.
+ */
+export function isLocalMidnight(ts: number): boolean {
+  const d = new Date(ts);
+  return (
+    d.getHours() === 0 &&
+    d.getMinutes() === 0 &&
+    d.getSeconds() === 0 &&
+    d.getMilliseconds() === 0
+  );
+}

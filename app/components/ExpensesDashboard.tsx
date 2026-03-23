@@ -5,8 +5,11 @@ import db from "@/lib/db";
 import { id, type InstaQLEntity } from "@instantdb/react";
 import schema from "../../instant.schema";
 import {
+  isLocalMidnight,
+  localTimeHm,
   localYearMonthNow,
   parseLocalDateTimeYmdHm,
+  parseLocalDateYmd,
   timestampToLocalHm,
   timestampToLocalYmd,
   yearMonthFromTimestamp,
@@ -49,6 +52,13 @@ function formatYearLabel(value: string | null | undefined, opts?: { emptyLabel?:
   const [year] = value.split("-");
   if (!year) return value;
   return year;
+}
+
+function formatExpenseWhen(createdAt: number): string {
+  const d = new Date(createdAt);
+  return isLocalMidnight(createdAt)
+    ? d.toLocaleDateString()
+    : d.toLocaleString();
 }
 
 type BudgetEntry = {
@@ -258,7 +268,10 @@ export function ExpensesDashboard() {
                     }
                   />
                   {selectedExpense && (
-                    <ExpenseDetails expense={selectedExpense} />
+                    <ExpenseDetails
+                      key={selectedExpense.id}
+                      expense={selectedExpense}
+                    />
                   )}
                 </>
               )}
@@ -383,7 +396,7 @@ export function ExpensesDashboard() {
                           >
                             <div className="flex flex-col">
                               <span className="text-[11px] text-zinc-500">
-                                {new Date(exp.createdAt).toLocaleString()}
+                                {formatExpenseWhen(exp.createdAt)}
                               </span>
                               <span className="text-xs font-medium">
                                 {exp.store}
@@ -447,7 +460,7 @@ function ExpensesList({
             onClick={() => onSelect?.(expense)}
           >
             <span className="truncate text-xs text-zinc-500">
-              {new Date(expense.createdAt).toLocaleString()}
+              {formatExpenseWhen(expense.createdAt)}
             </span>
             <div className="flex flex-col">
               <span className="truncate font-medium text-black dark:text-zinc-50">
@@ -485,17 +498,21 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
   const [editTime, setEditTime] = useState(() =>
     timestampToLocalHm(expense.createdAt),
   );
+  const [editIncludeTime, setEditIncludeTime] = useState(
+    () => !isLocalMidnight(expense.createdAt),
+  );
 
-  useEffect(() => {
+  function openEditMode() {
     setEditType(expense.type);
     setEditStore(expense.store);
     setEditPrice(String(expense.price));
     setEditDescription(expense.description);
     setEditDate(timestampToLocalYmd(expense.createdAt));
     setEditTime(timestampToLocalHm(expense.createdAt));
-    setIsEditing(false);
+    setEditIncludeTime(!isLocalMidnight(expense.createdAt));
     setError(null);
-  }, [expense.id, expense.type, expense.store, expense.price, expense.description, expense.createdAt]);
+    setIsEditing(true);
+  }
 
   async function handleReceiptChange(
     e: React.ChangeEvent<HTMLInputElement>,
@@ -532,15 +549,16 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
       !editStore.trim() ||
       !editDescription.trim() ||
       !editDate ||
-      !editTime ||
+      (editIncludeTime && !editTime) ||
       Number.isNaN(numericPrice) ||
       numericPrice <= 0
     ) {
       setError("Fill all fields and use a positive price.");
       return;
     }
-    const createdAt =
-      parseLocalDateTimeYmdHm(editDate, editTime) ?? expense.createdAt;
+    const createdAt = editIncludeTime
+      ? (parseLocalDateTimeYmdHm(editDate, editTime) ?? expense.createdAt)
+      : (parseLocalDateYmd(editDate) ?? expense.createdAt);
     setIsSaving(true);
     try {
       await db.transact(
@@ -567,6 +585,7 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
     setEditDescription(expense.description);
     setEditDate(timestampToLocalYmd(expense.createdAt));
     setEditTime(timestampToLocalHm(expense.createdAt));
+    setEditIncludeTime(!isLocalMidnight(expense.createdAt));
     setIsEditing(false);
     setError(null);
   }
@@ -583,7 +602,7 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
         {!isEditing ? (
           <button
             type="button"
-            onClick={() => setIsEditing(true)}
+            onClick={openEditMode}
             className="rounded-lg border border-zinc-300 px-2 py-1 text-[11px] font-medium text-zinc-800 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
           >
             Edit
@@ -620,7 +639,7 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
               className={inputClass}
             />
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-2">
             <div className="space-y-1">
               <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
                 Date
@@ -632,18 +651,55 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
                 className={inputClass}
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-                Time
-              </label>
+            <label
+              htmlFor="edit-include-time"
+              className="flex cursor-pointer items-start gap-2 text-xs text-zinc-700 dark:text-zinc-300"
+            >
               <input
-                type="time"
-                value={editTime}
-                onChange={(e) => setEditTime(e.target.value)}
-                step={60}
-                className={inputClass}
+                id="edit-include-time"
+                type="checkbox"
+                checked={editIncludeTime}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setEditIncludeTime(on);
+                  if (on) {
+                    setEditTime(
+                      !isLocalMidnight(expense.createdAt)
+                        ? timestampToLocalHm(expense.createdAt)
+                        : localTimeHm(),
+                    );
+                  }
+                }}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400 dark:border-zinc-600 dark:bg-zinc-950 dark:focus:ring-zinc-600"
               />
-            </div>
+              <span>
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                  Include time of transaction
+                </span>
+                <span className="mt-0.5 block text-[11px] font-normal text-zinc-500">
+                  Same as when recording: leave off to save only the date; turn
+                  on to set when the purchase happened.
+                </span>
+              </span>
+            </label>
+            {editIncludeTime ? (
+              <div className="space-y-1">
+                <label
+                  htmlFor="edit-time"
+                  className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400"
+                >
+                  Time
+                </label>
+                <input
+                  id="edit-time"
+                  type="time"
+                  value={editTime}
+                  onChange={(e) => setEditTime(e.target.value)}
+                  step={60}
+                  className={inputClass}
+                />
+              </div>
+            ) : null}
           </div>
           <div className="space-y-1">
             <label className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
@@ -696,7 +752,7 @@ function ExpenseDetails({ expense }: { expense: ExpenseEntity }) {
             <div className="flex flex-col">
               <span className="text-sm font-semibold">{expense.type}</span>
               <span className="text-[11px] text-zinc-500">
-                {new Date(expense.createdAt).toLocaleString()}
+                {formatExpenseWhen(expense.createdAt)}
               </span>
             </div>
             <span className="text-sm font-semibold tabular-nums">
