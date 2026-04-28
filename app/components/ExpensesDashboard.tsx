@@ -80,6 +80,9 @@ export function ExpensesDashboard() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("expenses");
   const [totalsMonth, setTotalsMonth] = useState(() => localYearMonthNow());
   const [totalsStore, setTotalsStore] = useState("");
+  const [totalsCategoryTypeFilter, setTotalsCategoryTypeFilter] = useState<
+    string | null
+  >(null);
   const [yearlyYear, setYearlyYear] = useState(() =>
     String(new Date().getFullYear()),
   );
@@ -102,9 +105,23 @@ export function ExpensesDashboard() {
     );
   }, []);
 
+  const toggleTotalsCategoryFilter = useCallback((typeKey: string) => {
+    setTotalsCategoryTypeFilter((prev) =>
+      prev === typeKey ? null : typeKey,
+    );
+  }, []);
+
   useEffect(() => {
     setYearlyCategoryTypeFilter(null);
   }, [yearlyYear, yearlyStore]);
+
+  useEffect(() => {
+    setTotalsCategoryTypeFilter(null);
+  }, [totalsMonth, totalsStore]);
+
+  useEffect(() => {
+    if (activeTab !== "totals") setTotalsCategoryTypeFilter(null);
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab !== "yearly") setYearlyCategoryTypeFilter(null);
@@ -235,6 +252,14 @@ export function ExpensesDashboard() {
       (exp.store || "").toLowerCase().includes(q),
     );
   }, [monthExpensesForTotals, totalsStore]);
+
+  const totalsListExpenses = useMemo(() => {
+    if (!totalsCategoryTypeFilter) return filteredMonthExpenses;
+    return filteredMonthExpenses.filter(
+      (exp) =>
+        expenseTypeCategory(exp.type) === totalsCategoryTypeFilter,
+    );
+  }, [filteredMonthExpenses, totalsCategoryTypeFilter]);
 
   const yearOptions = useMemo(() => {
     const set = new Set<number>();
@@ -584,51 +609,90 @@ export function ExpensesDashboard() {
                     <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                       By type
                     </h3>
+                    <p className="text-[11px] text-zinc-500">
+                      Click a type to see those expenses below. Click again to
+                      show all.
+                    </p>
                     <ul className="space-y-1.5 text-sm">
                       {byType.map((row, index) => {
                         const percentage =
                           total > 0 ? (row.amount / total) * 100 : 0;
+                        const selected =
+                          totalsCategoryTypeFilter === row.type;
                         return (
-                          <li
-                            key={row.type}
-                            className="flex items-center justify-between gap-3"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="inline-block h-2 w-2 rounded-full"
-                                style={{
-                                  backgroundColor:
-                                    PIE_COLORS[index % PIE_COLORS.length],
-                                }}
-                              />
-                              <span className="text-zinc-700 dark:text-zinc-200">
-                                {row.type}
-                              </span>
-                            </div>
-                            <div className="flex items-baseline gap-3 text-xs text-zinc-500">
-                              <span className="tabular-nums">
-                                ${row.amount.toFixed(2)}
-                              </span>
-                              <span className="tabular-nums">
-                                {percentage.toFixed(1)}%
-                              </span>
-                            </div>
+                          <li key={row.type} className="flex items-center">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleTotalsCategoryFilter(row.type)
+                              }
+                              className={`flex w-full items-center justify-between gap-3 rounded-lg border px-2 py-1.5 text-left transition ${
+                                selected
+                                  ? "border-zinc-400 bg-zinc-100 dark:border-zinc-500 dark:bg-zinc-800/80"
+                                  : "border-transparent hover:bg-zinc-100/80 dark:hover:bg-zinc-800/50"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="inline-block h-2 w-2 shrink-0 rounded-full"
+                                  style={{
+                                    backgroundColor:
+                                      PIE_COLORS[index % PIE_COLORS.length],
+                                  }}
+                                />
+                                <span className="text-zinc-700 dark:text-zinc-200">
+                                  {row.type}
+                                </span>
+                              </div>
+                              <div className="flex items-baseline gap-3 text-xs text-zinc-500">
+                                <span className="tabular-nums">
+                                  ${row.amount.toFixed(2)}
+                                </span>
+                                <span className="tabular-nums">
+                                  {percentage.toFixed(1)}%
+                                </span>
+                              </div>
+                            </button>
                           </li>
                         );
                       })}
                     </ul>
                   </div>
                   <div className="mt-4 space-y-2">
-                    <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                      Expenses for this month
-                    </h3>
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                        Expenses for this month
+                      </h3>
+                      {totalsCategoryTypeFilter ? (
+                        <button
+                          type="button"
+                          onClick={() => setTotalsCategoryTypeFilter(null)}
+                          className="text-[11px] font-medium text-zinc-600 underline underline-offset-2 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+                        >
+                          Clear type filter
+                        </button>
+                      ) : null}
+                    </div>
+                    {totalsCategoryTypeFilter ? (
+                      <p className="text-[11px] text-zinc-500">
+                        Showing{" "}
+                        <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                          {totalsCategoryTypeFilter}
+                        </span>{" "}
+                        only.
+                      </p>
+                    ) : null}
                     {filteredMonthExpenses.length === 0 ? (
                       <p className="text-xs text-zinc-500">
                         No expenses match this store filter for the selected month.
                       </p>
+                    ) : totalsListExpenses.length === 0 ? (
+                      <p className="text-xs text-zinc-500">
+                        No expenses in this category for the current filters.
+                      </p>
                     ) : (
                       <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-zinc-100 bg-zinc-50 p-2 text-xs text-black dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-200">
-                        {filteredMonthExpenses.map((exp) => (
+                        {totalsListExpenses.map((exp) => (
                           <li
                             key={exp.id}
                             className="flex items-baseline justify-between gap-3 rounded-md px-2 py-1 hover:bg-zinc-100/80 dark:hover:bg-zinc-900/60"
@@ -662,7 +726,12 @@ export function ExpensesDashboard() {
                   Add expenses to see a breakdown by type.
                 </p>
               ) : (
-                <PieChart byType={byType} />
+                <PieChart
+                  byType={byType}
+                  interactiveLegend
+                  selectedLegendType={totalsCategoryTypeFilter}
+                  onLegendTypeClick={toggleTotalsCategoryFilter}
+                />
               )}
             </div>
           </section>
